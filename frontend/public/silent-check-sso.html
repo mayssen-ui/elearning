@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Keycloak Silent Check SSO</title>
+</head>
+<body>
+    <script>
+        if (parent) {
+            parent.postMessage(location.href, location.origin);
+        } else {
+            // Fallback for standalone access
+            console.log('Silent SSO check completed');
+        }
+    </script>
+</body>
+</html>

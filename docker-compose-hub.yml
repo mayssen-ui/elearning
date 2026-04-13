@@ -1,0 +1,490 @@
+# 🐳 Docker Compose utilisant les images Docker Hub
+# Usage: docker-compose -f docker-compose-hub.yml up -d
+# Toutes les images sont poussees sur Docker Hub de mayss95
+
+version: '3.8'
+
+services:
+  # ============================================
+  # INFRASTRUCTURE SERVICES
+  # ============================================
+  
+  eureka:
+    image: mayss95/eureka-server:1.0.0
+    container_name: elearning_eureka
+    restart: unless-stopped
+    ports:
+      - "8761:8761"
+    networks:
+      - elearning_net
+
+  config-server:
+    image: mayss95/config-server:1.0.0
+    container_name: config_server
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=8889
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - SPRING_CLOUD_CONFIG_SERVER_NATIVE_SEARCHLOCATIONS=/config-repo
+    ports:
+      - "8889:8889"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+
+  postgres:
+    image: mayss95/postgres:1.0.0
+    container_name: elearning_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: adminpassword
+      POSTGRES_DB: notification_db
+    ports:
+      - "5433:5432"
+    networks:
+      - elearning_net
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  h2-server:
+    image: mayss95/h2-database:1.0.0
+    container_name: h2_server
+    restart: unless-stopped
+    ports:
+      - "1522:1522"
+      - "8083:8083"
+    networks:
+      - elearning_net
+
+  h2-server-chat:
+    image: mayss95/h2-database-chat:1.0.0
+    container_name: h2_server_chat
+    restart: unless-stopped
+    ports:
+      - "1524:1524"
+      - "8086:8086"
+    networks:
+      - elearning_net
+
+  keycloak:
+    image: mayss95/keycloak:1.0.0
+    container_name: elearning_keycloak
+    restart: unless-stopped
+    environment:
+      KC_DB: mysql
+      KC_DB_URL: jdbc:mysql://mysql:3306/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloakpassword
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "18080:8080"
+    networks:
+      - elearning_net
+    depends_on:
+      - mysql
+
+  mysql:
+    image: mysql:8.0
+    container_name: elearning_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: keycloak
+      MYSQL_USER: keycloak
+      MYSQL_PASSWORD: keycloakpassword
+    ports:
+      - "3307:3306"
+    networks:
+      - elearning_net
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  phpmyadmin:
+    image: mayss95/phpmyadmin:1.0.0
+    container_name: elearning_phpmyadmin
+    restart: unless-stopped
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+    ports:
+      - "8085:80"
+    networks:
+      - elearning_net
+
+  # ============================================
+  # MICROSERVICES - 2 INSTANCES CHACUN (Load Balancing)
+  # ============================================
+
+  # USER SERVICE - Instance 1
+  user-service-1:
+    image: mayss95/user-service:1.0.0
+    container_name: user_service_instance_1
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=3004
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=user-service-1
+      - EUREKA_INSTANCE_HOSTNAME=user_service_instance_1
+      - SPRING_DATASOURCE_URL=jdbc:h2:file:./data/userdb1;DB_CLOSE_ON_EXIT=FALSE
+    ports:
+      - "3004:3004"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+      - h2-server
+
+  # USER SERVICE - Instance 2
+  user-service-2:
+    image: mayss95/user-service:1.0.0
+    container_name: user_service_instance_2
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=3017
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=user-service-2
+      - EUREKA_INSTANCE_HOSTNAME=user_service_instance_2
+      - SPRING_DATASOURCE_URL=jdbc:h2:file:./data/userdb2;DB_CLOSE_ON_EXIT=FALSE
+    ports:
+      - "3017:3017"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+      - h2-server
+
+  # API GATEWAY - Instance 1
+  api-gateway-1:
+    image: mayss95/api-gateway:1.0.0
+    container_name: api_gateway_instance_1
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=3000
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - SPRING_CLOUD_GATEWAY_ROUTES[0]_ID=user-service
+      - SPRING_CLOUD_GATEWAY_ROUTES[0]_URI=lb://USER-SERVICE
+      - SPRING_CLOUD_GATEWAY_ROUTES[0]_PREDICATES[0]=Path=/api/users/**
+    ports:
+      - "3000:3000"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+      - user-service-1
+      - user-service-2
+
+  # API GATEWAY - Instance 2
+  api-gateway-2:
+    image: mayss95/api-gateway:1.0.0
+    container_name: api_gateway_instance_2
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=3001
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - SPRING_CLOUD_GATEWAY_ROUTES[0]_ID=user-service
+      - SPRING_CLOUD_GATEWAY_ROUTES[0]_URI=lb://USER-SERVICE
+      - SPRING_CLOUD_GATEWAY_ROUTES[0]_PREDICATES[0]=Path=/api/users/**
+    ports:
+      - "3001:3001"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+      - user-service-1
+      - user-service-2
+
+  # COURSE SERVICE - Instance 1
+  course-service-1:
+    image: mayss95/course-service:1.0.0
+    container_name: course_service_instance_1
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=3002
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=course-service-1
+    ports:
+      - "3002:3002"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+      - mysql
+
+  # COURSE SERVICE - Instance 2
+  course-service-2:
+    image: mayss95/course-service:1.0.0
+    container_name: course_service_instance_2
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=3018
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=course-service-2
+    ports:
+      - "3018:3018"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+      - mysql
+
+  # PROGRESS SERVICE - Instance 1
+  progress-service-1:
+    image: mayss95/progress-service:1.0.0
+    container_name: progress_service_instance_1
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=3003
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=progress-service-1
+    ports:
+      - "3003:3003"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+      - postgres
+
+  # PROGRESS SERVICE - Instance 2
+  progress-service-2:
+    image: mayss95/progress-service:1.0.0
+    container_name: progress_service_instance_2
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=3019
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=progress-service-2
+    ports:
+      - "3019:3019"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+      - postgres
+
+  # CHAT SERVICE - Instance 1
+  chat-service-1:
+    image: mayss95/chat-service:1.0.0
+    container_name: chat_service_instance_1
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=3010
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=chat-service-1
+      - SPRING_DATASOURCE_URL=jdbc:h2:tcp://h2-server-chat:1524/mem:chatdb
+    ports:
+      - "3010:3010"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+      - h2-server-chat
+
+  # CHAT SERVICE - Instance 2
+  chat-service-2:
+    image: mayss95/chat-service:1.0.0
+    container_name: chat_service_instance_2
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=3020
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=chat-service-2
+      - SPRING_DATASOURCE_URL=jdbc:h2:tcp://h2-server-chat:1524/mem:chatdb
+    ports:
+      - "3020:3020"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+      - h2-server-chat
+
+  # FEEDBACK SERVICE - Instance 1
+  feedback-service-1:
+    image: mayss95/feedback-service:1.0.0
+    container_name: feedback_service_instance_1
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=3044
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=feedback-service-1
+    ports:
+      - "3044:3044"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+      - mysql
+
+  # FEEDBACK SERVICE - Instance 2
+  feedback-service-2:
+    image: mayss95/feedback-service:1.0.0
+    container_name: feedback_service_instance_2
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=3054
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=feedback-service-2
+    ports:
+      - "3054:3054"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+      - mysql
+
+  # BADGE SERVICE - Instance 1
+  badge-service-1:
+    image: mayss95/badge-service:1.0.0
+    container_name: badge_service_instance_1
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=3008
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=badge-service-1
+    ports:
+      - "3008:3008"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+      - mysql
+
+  # BADGE SERVICE - Instance 2
+  badge-service-2:
+    image: mayss95/badge-service:1.0.0
+    container_name: badge_service_instance_2
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=3021
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=badge-service-2
+    ports:
+      - "3021:3021"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+      - mysql
+
+  # LEADERBOARD SERVICE - Instance 1
+  leaderboard-service-1:
+    image: mayss95/leaderboard-service:1.0.0
+    container_name: leaderboard_service_instance_1
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=3009
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=leaderboard-service-1
+    ports:
+      - "3009:3009"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+      - redis
+
+  # LEADERBOARD SERVICE - Instance 2
+  leaderboard-service-2:
+    image: mayss95/leaderboard-service:1.0.0
+    container_name: leaderboard_service_instance_2
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=3022
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=leaderboard-service-2
+    ports:
+      - "3022:3022"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+      - redis
+
+  # ANALYTICS SERVICE - Instance 1
+  analytics-service-1:
+    image: mayss95/analytics-service:1.0.0
+    container_name: analytics_service_instance_1
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=3007
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=analytics-service-1
+    ports:
+      - "3007:3007"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+
+  # ANALYTICS SERVICE - Instance 2
+  analytics-service-2:
+    image: mayss95/analytics-service:1.0.0
+    container_name: analytics_service_instance_2
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=3023
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=analytics-service-2
+    ports:
+      - "3023:3023"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+
+  # NOTIFICATION SERVICE - Instance 1
+  notification-service-1:
+    image: mayss95/notification-service:1.0.0
+    container_name: notification_service_instance_1
+    restart: unless-stopped
+    environment:
+      - PORT=3005
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=notification-service-1
+    ports:
+      - "3005:3005"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+      - postgres
+
+  # NOTIFICATION SERVICE - Instance 2
+  notification-service-2:
+    image: mayss95/notification-service:1.0.0
+    container_name: notification_service_instance_2
+    restart: unless-stopped
+    environment:
+      - PORT=3015
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=notification-service-2
+    ports:
+      - "3015:3015"
+    networks:
+      - elearning_net
+    depends_on:
+      - eureka
+      - postgres
+
+  # REDIS (pour leaderboard)
+  redis:
+    image: redis:7-alpine
+    container_name: elearning_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - elearning_net
+
+networks:
+  elearning_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  mysql_data:

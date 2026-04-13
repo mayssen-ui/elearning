@@ -1,0 +1,163 @@
+server:
+  port: 3100
+
+spring:
+  application:
+    name: api-gateway
+  config:
+    import: "optional:configserver:"
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://host.docker.internal:18080/realms/elearning
+          jwk-set-uri: http://host.docker.internal:18080/realms/elearning/protocol/openid-connect/certs
+      client:
+        registration:
+          keycloak:
+            client-id: elearning-backend
+            client-secret: w3z12Omxdoec2UXkR5TIW2wUF3JiMd0h
+            authorization-grant-type: client_credentials
+            scope: openid
+        provider:
+          keycloak:
+            issuer-uri: http://host.docker.internal:18080/realms/elearning
+            token-uri: http://host.docker.internal:18080/realms/elearning/protocol/openid-connect/token
+  cloud:
+    config:
+      uri: http://host.docker.internal:8889
+      fail-fast: false
+      retry:
+        initial-interval: 1000
+        max-attempts: 6
+        max-interval: 2000
+        multiplier: 1.1
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: "http://localhost:5173,http://127.0.0.1:5173"
+            allowedMethods: "GET,POST,PUT,DELETE,OPTIONS"
+            allowedHeaders: "*"
+            allowCredentials: true
+      routes:
+        - id: user-service-api
+          uri: lb://user-service
+          predicates:
+            - Path=/api/users/**
+          filters:
+            - StripPrefix=0
+        - id: user-service-root
+          uri: lb://user-service
+          predicates:
+            - Path=/users/**
+          filters:
+            - StripPrefix=0
+        - id: course-service-api
+          uri: lb://course-service
+          predicates:
+            - Path=/api/courses/**
+          filters:
+            - StripPrefix=0
+        - id: course-service-root
+          uri: lb://course-service
+          predicates:
+            - Path=/courses/**
+          filters:
+            - StripPrefix=0
+        - id: progress-service-api
+          uri: lb://progress-service
+          predicates:
+            - Path=/api/progress/**
+          filters:
+            - StripPrefix=0
+        - id: progress-service-root
+          uri: lb://progress-service
+          predicates:
+            - Path=/progress/**
+          filters:
+            - ApiPrefix
+        - id: feedback-service-api
+          uri: lb://feedback-service
+          predicates:
+            - Path=/api/feedbacks/**
+          filters:
+            - StripPrefix=0
+        - id: feedback-service-root
+          uri: lb://feedback-service
+          predicates:
+            - Path=/feedbacks/**
+          filters:
+            - ApiPrefix
+        - id: notification-service-api
+          uri: http://host.docker.internal:3005
+          predicates:
+            - Path=/api/notifications/**
+          filters:
+            - StripPrefix=1
+        - id: notification-service-root
+          uri: http://host.docker.internal:3005
+          predicates:
+            - Path=/notifications/**
+          filters:
+            - StripPrefix=0
+        - id: chat-service-api
+          uri: lb://chat-service
+          predicates:
+            - Path=/api/chat/**
+          filters:
+            - StripPrefix=0
+            - DedupeResponseHeader=Access-Control-Allow-Origin
+            - DedupeResponseHeader=Access-Control-Allow-Credentials
+        - id: analytics-service-api
+          uri: lb://analytics-service
+          predicates:
+            - Path=/api/analytics/**
+          filters:
+            - StripPrefix=0
+        - id: badge-service-api
+          uri: lb://badge-service
+          predicates:
+            - Path=/api/badges/**
+          filters:
+            - StripPrefix=0
+        - id: leaderboard-service-api
+          uri: lb://leaderboard-service
+          predicates:
+            - Path=/api/leaderboard/**
+          filters:
+            - StripPrefix=0
+
+eureka:
+  client:
+    enabled: true
+    service-url:
+      defaultZone: http://host.docker.internal:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: false
+    instance-id: ${spring.application.name}:${server.port}
+    health-check-url-path: /actuator/health
+    status-page-url-path: /actuator/info
+    metadata-map:
+      management.context-path: /actuator
+
+# Load balancer configuration
+spring.cloud.loadbalancer.ribbon.enabled: false
+spring.cloud.gateway.httpclient.connect-timeout: 30000
+spring.cloud.gateway.httpclient.response-timeout: 30s
+spring.cloud.gateway.discovery.locator.connect-timeout: 30000
+spring.cloud.gateway.discovery.locator.read-timeout: 30000
+
+# CORS configuration for Spring Cloud Gateway
+spring.cloud.gateway.globalcors.cors-configurations.'[/**]'.allowed-origins: "http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174"
+spring.cloud.gateway.globalcors.cors-configurations.'[/**]'.allowed-methods: "GET,POST,PUT,DELETE,OPTIONS,PATCH"
+spring.cloud.gateway.globalcors.cors-configurations.'[/**]'.allowed-headers: "*"
+spring.cloud.gateway.globalcors.cors-configurations.'[/**]'.allow-credentials: true
+spring.cloud.gateway.globalcors.cors-configurations.'[/**]'.max-age: 3600
+spring.cloud.gateway.globalcors.add-to-simple-url-handler-mapping: true

@@ -1,0 +1,121 @@
+server:
+  port: 3000
+
+spring:
+  application:
+    name: api-gateway
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://host.docker.internal:18080/realms/elearning
+          jwk-set-uri: http://host.docker.internal:18080/realms/elearning/protocol/openid-connect/certs
+      client:
+        registration:
+          keycloak:
+            client-id: elearning-backend
+            client-secret: w3z12Omxdoec2UXkR5TIW2wUF3JiMd0h
+            authorization-grant-type: client_credentials
+            scope: openid
+        provider:
+          keycloak:
+            issuer-uri: http://host.docker.internal:18080/realms/elearning
+            token-uri: http://host.docker.internal:18080/realms/elearning/protocol/openid-connect/token
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      routes:
+        - id: user-service
+          uri: lb://user-service
+          predicates:
+            - Path=/api/users/**
+          filters:
+            - StripPrefix=0
+        - id: course-service-api
+          uri: lb://course-service
+          predicates:
+            - Path=/api/courses/**
+          filters:
+            - StripPrefix=0
+        - id: course-service-root
+          uri: lb://course-service
+          predicates:
+            - Path=/courses/**
+          filters:
+            - StripPrefix=0
+        - id: progress-service-api
+          uri: lb://progress-service
+          predicates:
+            - Path=/api/progress/**
+          filters:
+            - StripPrefix=0
+        - id: progress-service-root
+          uri: lb://progress-service
+          predicates:
+            - Path=/progress/**
+          filters:
+            - StripPrefix=0
+        - id: feedback-service
+          uri: lb://feedback-service
+          predicates:
+            - Path=/api/feedbacks/**
+          filters:
+            - StripPrefix=0
+        - id: notification-service-api
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/notifications/**
+          filters:
+            - StripPrefix=0
+        - id: notification-service-root
+          uri: lb://notification-service
+          predicates:
+            - Path=/notifications/**
+          filters:
+            - StripPrefix=0
+        - id: chat-service-api
+          uri: lb://chat-service
+          predicates:
+            - Path=/api/chat/**
+          filters:
+            - StripPrefix=0
+        - id: badge-service
+          uri: lb://badge-service
+          predicates:
+            - Path=/api/badges/**
+          filters:
+            - StripPrefix=0
+        - id: leaderboard-service
+          uri: lb://leaderboard-service
+          predicates:
+            - Path=/api/leaderboard/**
+          filters:
+            - StripPrefix=0
+        - id: analytics-service
+          uri: lb://analytics-service
+          predicates:
+            - Path=/api/analytics/**
+          filters:
+            - StripPrefix=0
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://host.docker.internal:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${server.port}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+  endpoint:
+    health:
+      show-details: always

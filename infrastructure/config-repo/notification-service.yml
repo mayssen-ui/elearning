@@ -1,0 +1,20 @@
+# Notification Service Configuration (NestJS)
+# This is a placeholder for documentation purposes
+# Actual configuration is in the application code
+
+server:
+  port: 3005
+
+spring:
+  application:
+    name: notification-service
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://host.docker.internal:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${server.port}

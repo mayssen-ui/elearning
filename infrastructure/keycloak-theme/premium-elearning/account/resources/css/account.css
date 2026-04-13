@@ -1,0 +1,198 @@
+/* Premium E-Learning Theme - Account Console CSS */
+
+:root {
+    --primary-color: #6366f1;
+    --secondary-color: #8b5cf6;
+    --success-color: #22c55e;
+    --warning-color: #f59e0b;
+    --danger-color: #ef4444;
+    --background-color: #f8fafc;
+    --card-background: #ffffff;
+    --text-color: #1e293b;
+    --text-muted: #64748b;
+    --border-color: #e2e8f0;
+    --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --radius: 12px;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: var(--background-color);
+    color: var(--text-color);
+    margin: 0;
+    padding: 0;
+    line-height: 1.6;
+}
+
+/* Header Styles */
+.pf-c-page__header {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%) !important;
+    border-bottom: none;
+}
+
+.pf-c-page__header-brand {
+    background: transparent !important;
+}
+
+.pf-c-page__header-brand-link {
+    color: white !important;
+    font-weight: 600;
+    font-size: 1.25rem;
+}
+
+/* Navigation Styles */
+.pf-c-nav__item {
+    margin-bottom: 4px;
+}
+
+.pf-c-nav__link {
+    border-radius: var(--radius);
+    margin: 0 8px;
+    color: var(--text-color) !important;
+    transition: all 0.2s ease;
+}
+
+.pf-c-nav__link:hover {
+    background-color: rgba(99, 102, 241, 0.1) !important;
+    color: var(--primary-color) !important;
+}
+
+.pf-c-nav__link.pf-m-current {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%) !important;
+    color: white !important;
+    font-weight: 500;
+}
+
+/* Card Styles */
+.pf-c-card {
+    background: var(--card-background);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
+}
+
+.pf-c-card__title {
+    font-weight: 600;
+    font-size: 1.125rem;
+    color: var(--text-color);
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.pf-c-card__body {
+    padding: 1.5rem;
+}
+
+/* Form Styles */
+.pf-c-form__group {
+    margin-bottom: 1.5rem;
+}
+
+.pf-c-form__label {
+    font-weight: 500;
+    color: var(--text-color);
+    margin-bottom: 0.5rem;
+    font-size: 0.875rem;
+}
+
+.pf-c-form-control {
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+    transition: all 0.2s ease;
+}
+
+.pf-c-form-control:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    outline: none;
+}
+
+/* Button Styles */
+.pf-c-button.pf-m-primary {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+    border: none;
+    border-radius: 8px;
+    padding: 0.75rem 1.5rem;
+    font-weight: 500;
+    color: white;
+    transition: all 0.2s ease;
+}
+
+.pf-c-button.pf-m-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+
+.pf-c-button.pf-m-secondary {
+    background: white;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-color);
+}
+
+.pf-c-button.pf-m-secondary:hover {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
+/* Alert Styles */
+.pf-c-alert.pf-m-success {
+    background-color: rgba(34, 197, 94, 0.1);
+    border-color: var(--success-color);
+    border-radius: var(--radius);
+}
+
+.pf-c-alert.pf-m-danger {
+    background-color: rgba(239, 68, 68, 0.1);
+    border-color: var(--danger-color);
+    border-radius: var(--radius);
+}
+
+/* Table Styles */
+.pf-c-table {
+    background: var(--card-background);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.pf-c-table thead {
+    background: var(--background-color);
+}
+
+.pf-c-table th {
+    font-weight: 600;
+    color: var(--text-color);
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+}
+
+/* Page Title */
+.pf-c-page__main-section.pf-m-light {
+    background: var(--card-background);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.pf-c-title.pf-m-2xl {
+    font-weight: 700;
+    color: var(--text-color);
+}
+
+/* Avatar */
+.pf-c-avatar {
+    border-radius: 50%;
+    border: 3px solid var(--primary-color);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .pf-c-page__sidebar {
+        background: var(--card-background);
+    }
+    
+    .pf-c-card {
+        margin: 1rem;
+    }
+}

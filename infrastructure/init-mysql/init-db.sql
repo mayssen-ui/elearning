@@ -1,0 +1,13 @@
+CREATE DATABASE IF NOT EXISTS user_db;
+
+GRANT ALL PRIVILEGES ON user_db.* TO 'admin'@'%';
+
+
+
+CREATE DATABASE IF NOT EXISTS progress_db;
+GRANT ALL PRIVILEGES ON progress_db.* TO 'admin'@'%';
+
+CREATE DATABASE IF NOT EXISTS feedback_db;
+GRANT ALL PRIVILEGES ON feedback_db.* TO 'admin'@'%';
+
+FLUSH PRIVILEGES;

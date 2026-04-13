@@ -1,0 +1,714 @@
+# ============================================
+# DOCKER COMPOSE - MULTI-INSTANCE SCALING
+# ============================================
+# Ce fichier permet de lancer plusieurs instances de chaque microservice
+# pour tester le load balancing et la scalabilité horizontale.
+# 
+# NOUVEAUX PORTS UTILISÉS (vérifiés - aucun conflit):
+# - 3010-3016: Instances supplémentaires des services Spring Boot
+# - 8879: Instance TCP supplémentaire du Notification Service
+# ============================================
+
+version: '3.8'
+
+services:
+  # ============================================
+  # NGINX LOAD BALANCER (Instance principale)
+  # ============================================
+  nginx-lb:
+    image: nginx:alpine
+    container_name: elearning_nginx_lb
+    ports:
+      - "8888:80"
+      - "8880:8080"
+      - "8878:8878"
+    volumes:
+      - ./nginx/nginx-scaling.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - postgres
+      - mysql
+      - eureka
+
+  # ============================================
+  # INFRASTRUCTURE SERVICES
+  # ============================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: elearning_postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: adminpassword
+      POSTGRES_DB: notification_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-postgres:/docker-entrypoint-initdb.d
+    networks:
+      - elearning_net
+
+  mysql:
+    image: mysql:8.0
+    container_name: elearning_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: adminpassword
+      MYSQL_DATABASE: feedback_db
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: adminpassword
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init-mysql:/docker-entrypoint-initdb.d
+    networks:
+      - elearning_net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-padminpassword"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.1
+    container_name: elearning_keycloak
+    user: root
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_THEME_CACHE_TEMPLATES: "false"
+      KC_THEME_CACHE_THEMES: "false"
+      KC_THEME_STATIC_MAX_AGE: "0"
+    command: start-dev
+    ports:
+      - "18080:8080"
+    volumes:
+      - keycloak_data:/opt/keycloak/data/h2
+      - ./keycloak-theme/premium-elearning:/opt/keycloak/themes/premium-elearning
+    networks:
+      - elearning_net
+
+  eureka:
+    image: steeltoeoss/eureka-server
+    container_name: elearning_eureka
+    ports:
+      - "8761:8761"
+    networks:
+      - elearning_net
+
+  # ----------- CONFIG SERVER -----------
+  config-server:
+    build:
+      context: ../backend/spring-boot-services/config-server
+      dockerfile: Dockerfile
+    container_name: config_server
+    restart: unless-stopped
+    depends_on:
+      - eureka
+    environment:
+      - SERVER_PORT=8889
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=config-server
+      - EUREKA_INSTANCE_HOSTNAME=config_server
+    volumes:
+      - ./config-repo:/config-repo:ro
+    ports:
+      - "8889:8889"
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: elearning_phpmyadmin
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      MYSQL_ROOT_PASSWORD: adminpassword
+    ports:
+      - "8085:80"
+    depends_on:
+      - mysql
+    networks:
+      - elearning_net
+
+  # ============================================
+  # MULTIPLE SERVICE INSTANCES FOR LOAD BALANCING
+  # ============================================
+
+  # ----------- USER SERVICE INSTANCES -----------
+  user-service-1:
+    image: eclipse-temurin:17-jdk-alpine
+    container_name: user_service_instance_1
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=3004
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=user-service-1
+      - EUREKA_INSTANCE_HOSTNAME=user_service_instance_1
+      - SPRING_DATASOURCE_URL=jdbc:h2:file:./data/userdb1;DB_CLOSE_ON_EXIT=FALSE
+    volumes:
+      - ../backend/spring-boot-services/user-service/target/user-service-1.0.0.jar:/app/user-service.jar:ro
+      - user_h2_data:/app/data
+    working_dir: /app
+    command: ["sh", "-c", "sleep 30 && java -jar user-service.jar"]
+    ports:
+      - "3004:3004"
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  user-service-2:
+    image: eclipse-temurin:17-jdk-alpine
+    container_name: user_service_instance_2
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=3017
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=user-service-2
+      - EUREKA_INSTANCE_HOSTNAME=user_service_instance_2
+      - SPRING_DATASOURCE_URL=jdbc:h2:file:./data/userdb2;DB_CLOSE_ON_EXIT=FALSE
+    volumes:
+      - ../backend/spring-boot-services/user-service/target/user-service-1.0.0.jar:/app/user-service.jar:ro
+      - user_h2_data:/app/data
+    working_dir: /app
+    command: ["sh", "-c", "sleep 35 && java -jar user-service.jar --server.port=3017"]
+    ports:
+      - "3017:3017"
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ----------- COURSE SERVICE INSTANCES -----------
+  course-service-1:
+    image: eclipse-temurin:17-jdk-alpine
+    container_name: course_service_instance_1
+    restart: unless-stopped
+    depends_on:
+      - h2-server
+    environment:
+      - SERVER_PORT=3002
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=course-service-1
+      - EUREKA_INSTANCE_HOSTNAME=course_service_instance_1
+      - SPRING_DATASOURCE_URL=jdbc:h2:tcp://h2-server:1522/coursedb
+      - SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.h2.Driver
+      - SPRING_DATASOURCE_USERNAME=sa
+      - SPRING_DATASOURCE_PASSWORD=
+      - SPRING_JPA_DATABASE_PLATFORM=org.hibernate.dialect.H2Dialect
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+    volumes:
+      - ../backend/spring-boot-services/course-service/target/course-service-1.0.0.jar:/app/course-service.jar:ro
+    working_dir: /app
+    command: ["sh", "-c", "sleep 50 && java -jar course-service.jar"]
+    ports:
+      - "3002:3002"
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  course-service-2:
+    image: eclipse-temurin:17-jdk-alpine
+    container_name: course_service_instance_2
+    restart: unless-stopped
+    depends_on:
+      - h2-server
+    environment:
+      - SERVER_PORT=3018
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=course-service-2
+      - EUREKA_INSTANCE_HOSTNAME=course_service_instance_2
+      - SPRING_DATASOURCE_URL=jdbc:h2:tcp://h2-server:1522/coursedb
+      - SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.h2.Driver
+      - SPRING_DATASOURCE_USERNAME=sa
+      - SPRING_DATASOURCE_PASSWORD=
+      - SPRING_JPA_DATABASE_PLATFORM=org.hibernate.dialect.H2Dialect
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+    volumes:
+      - ../backend/spring-boot-services/course-service/target/course-service-1.0.0.jar:/app/course-service.jar:ro
+    working_dir: /app
+    command: ["sh", "-c", "sleep 55 && java -jar course-service.jar --server.port=3018"]
+    ports:
+      - "3018:3018"
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ----------- PROGRESS SERVICE INSTANCES -----------
+  progress-service-1:
+    image: eclipse-temurin:17-jdk-alpine
+    container_name: progress_service_instance_1
+    restart: unless-stopped
+    depends_on:
+      - h2-server-progress
+    environment:
+      - SERVER_PORT=3003
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=progress-service-1
+      - EUREKA_INSTANCE_HOSTNAME=progress_service_instance_1
+      - SPRING_DATASOURCE_URL=jdbc:h2:tcp://h2-server-progress:1523/progressdb
+      - SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.h2.Driver
+      - SPRING_DATASOURCE_USERNAME=sa
+      - SPRING_DATASOURCE_PASSWORD=
+      - SPRING_JPA_DATABASE_PLATFORM=org.hibernate.dialect.H2Dialect
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+    volumes:
+      - ../backend/spring-boot-services/progress-service/target/progress-service-1.0.0.jar:/app/progress-service.jar:ro
+    working_dir: /app
+    command: ["sh", "-c", "sleep 60 && java -jar progress-service.jar"]
+    ports:
+      - "3003:3003"
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  progress-service-2:
+    image: eclipse-temurin:17-jdk-alpine
+    container_name: progress_service_instance_2
+    restart: unless-stopped
+    depends_on:
+      - h2-server-progress
+    environment:
+      - SERVER_PORT=3019
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=progress-service-2
+      - EUREKA_INSTANCE_HOSTNAME=progress_service_instance_2
+      - SPRING_DATASOURCE_URL=jdbc:h2:tcp://h2-server-progress:1523/progressdb
+      - SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.h2.Driver
+      - SPRING_DATASOURCE_USERNAME=sa
+      - SPRING_DATASOURCE_PASSWORD=
+      - SPRING_JPA_DATABASE_PLATFORM=org.hibernate.dialect.H2Dialect
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+    volumes:
+      - ../backend/spring-boot-services/progress-service/target/progress-service-1.0.0.jar:/app/progress-service.jar:ro
+    working_dir: /app
+    command: ["sh", "-c", "sleep 65 && java -jar progress-service.jar --server.port=3019"]
+    ports:
+      - "3019:3019"
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ----------- FEEDBACK SERVICE INSTANCES -----------
+  feedback-service-1:
+    build:
+      context: ../backend/spring-boot-services/feedback-service
+      dockerfile: Dockerfile
+    container_name: feedback_service_instance_1
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      - SERVER_PORT=3044
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=feedback-service-1
+      - EUREKA_INSTANCE_HOSTNAME=feedback_service_instance_1
+    command: ["sh", "-c", "sleep 60 && java -jar /app.jar --server.port=3044 --spring.datasource.url=jdbc:mysql://mysql:3306/feedback_db?createDatabaseIfNotExist=true --spring.datasource.username=root --spring.datasource.password=adminpassword"]
+    ports:
+      - "3044:3044"
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  feedback-service-2:
+    build:
+      context: ../backend/spring-boot-services/feedback-service
+      dockerfile: Dockerfile
+    container_name: feedback_service_instance_2
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      - SERVER_PORT=3054
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=feedback-service-2
+      - EUREKA_INSTANCE_HOSTNAME=feedback_service_instance_2
+    command: ["sh", "-c", "sleep 65 && java -jar /app.jar --server.port=3054 --spring.datasource.url=jdbc:mysql://mysql:3306/feedback_db?createDatabaseIfNotExist=true --spring.datasource.username=root --spring.datasource.password=adminpassword"]
+    ports:
+      - "3054:3054"
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ----------- NOTIFICATION SERVICE INSTANCES (NestJS) -----------
+  notification-service-1:
+    image: node:18-alpine
+    container_name: notification_service_instance_1
+    restart: unless-stopped
+    user: root
+    working_dir: /app
+    volumes:
+      - ../backend/apps/notification-microservice:/app
+      - notification_node_modules:/app/node_modules
+    command: ["sh", "-c", "npm install && npm run build && npm start"]
+    ports:
+      - "3005:3005"
+      - "8877:8877"
+    environment:
+      - HTTP_PORT=3005
+      - TCP_PORT=8877
+      - DB_HOST=host.docker.internal
+      - DB_PORT=5433
+      - DB_USER=admin
+      - DB_PASSWORD=adminpassword
+      - DB_NAME=notification_db
+      - EUREKA_HOST=host.docker.internal
+      - EUREKA_PORT=8761
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=notification-service-1
+      - EUREKA_INSTANCE_HOSTNAME=notification_service_instance_1
+      - EUREKA_INSTANCE_PORT=3005
+      - EUREKA_INSTANCE_IP=host.docker.internal
+      - COURSE_SERVICE_URL=http://host.docker.internal:3002
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  notification-service-2:
+    image: node:18-alpine
+    container_name: notification_service_instance_2
+    restart: unless-stopped
+    user: root
+    working_dir: /app
+    volumes:
+      - ../backend/apps/notification-microservice:/app
+      - notification_node_modules_2:/app/node_modules
+    command: ["sh", "-c", "npm install && npm run build && HTTP_PORT=3015 TCP_PORT=8879 EUREKA_INSTANCE_INSTANCE_ID=notification-service-2 npm start"]
+    ports:
+      - "3015:3015"
+      - "8879:8879"
+    environment:
+      - HTTP_PORT=3015
+      - TCP_PORT=8879
+      - DB_HOST=host.docker.internal
+      - DB_PORT=5433
+      - DB_USER=admin
+      - DB_PASSWORD=adminpassword
+      - DB_NAME=notification_db
+      - EUREKA_HOST=host.docker.internal
+      - EUREKA_PORT=8761
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=notification-service-2
+      - EUREKA_INSTANCE_HOSTNAME=notification_service_instance_2
+      - EUREKA_INSTANCE_PORT=3015
+      - EUREKA_INSTANCE_IP=host.docker.internal
+      - COURSE_SERVICE_URL=http://host.docker.internal:3002
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ----------- API GATEWAY INSTANCES -----------
+  api-gateway-1:
+    image: eclipse-temurin:17-jdk-alpine
+    container_name: api_gateway_instance_1
+    environment:
+      - SERVER_PORT=3000
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=api-gateway-1
+      - EUREKA_INSTANCE_HOSTNAME=api_gateway_instance_1
+    volumes:
+      - ../backend/spring-boot-services/api-gateway/target/api-gateway-1.0.0.jar:/app/api-gateway.jar:ro
+    working_dir: /app
+    command: ["java", "-jar", "api-gateway.jar"]
+    ports:
+      - "3000:3000"
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  api-gateway-2:
+    image: eclipse-temurin:17-jdk-alpine
+    container_name: api_gateway_instance_2
+    environment:
+      - SERVER_PORT=3011
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=api-gateway-2
+      - EUREKA_INSTANCE_HOSTNAME=api_gateway_instance_2
+    volumes:
+      - ../backend/spring-boot-services/api-gateway/target/api-gateway-1.0.0.jar:/app/api-gateway.jar:ro
+    working_dir: /app
+    command: ["java", "-jar", "api-gateway.jar", "--server.port=3011"]
+    ports:
+      - "3011:3011"
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ----------- CHAT SERVICE INSTANCES -----------
+  chat-service-1:
+    image: eclipse-temurin:17-jdk-alpine
+    container_name: chat_service_instance_1
+    restart: unless-stopped
+    depends_on:
+      - h2-server-chat
+    environment:
+      - SERVER_PORT=3010
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=chat-service-1
+      - EUREKA_INSTANCE_HOSTNAME=chat_service_instance_1
+      - EUREKA_INSTANCE_PORT=3010
+      - SPRING_DATASOURCE_URL=jdbc:h2:tcp://h2-server-chat:1524/chatdb
+      - SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.h2.Driver
+      - SPRING_DATASOURCE_USERNAME=sa
+      - SPRING_DATASOURCE_PASSWORD=
+      - SPRING_JPA_DATABASE_PLATFORM=org.hibernate.dialect.H2Dialect
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+    volumes:
+      - ../backend/spring-boot-services/chat-service/target/chat-service-1.0.0.jar:/app/chat-service.jar:ro
+    working_dir: /app
+    command: ["sh", "-c", "sleep 70 && java -jar chat-service.jar"]
+    ports:
+      - "3010:3010"
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  chat-service-2:
+    image: eclipse-temurin:17-jdk-alpine
+    container_name: chat_service_instance_2
+    restart: unless-stopped
+    depends_on:
+      - h2-server-chat
+    environment:
+      - SERVER_PORT=3020
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=chat-service-2
+      - EUREKA_INSTANCE_HOSTNAME=chat_service_instance_2
+      - EUREKA_INSTANCE_PORT=3020
+      - SPRING_DATASOURCE_URL=jdbc:h2:tcp://h2-server-chat:1524/chatdb
+      - SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.h2.Driver
+      - SPRING_DATASOURCE_USERNAME=sa
+      - SPRING_DATASOURCE_PASSWORD=
+      - SPRING_JPA_DATABASE_PLATFORM=org.hibernate.dialect.H2Dialect
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+    volumes:
+      - ../backend/spring-boot-services/chat-service/target/chat-service-1.0.0.jar:/app/chat-service.jar:ro
+    working_dir: /app
+    command: ["sh", "-c", "sleep 75 && java -jar chat-service.jar --server.port=3020"]
+    ports:
+      - "3020:3020"
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ----------- BADGE SERVICE INSTANCES -----------
+  badge-service-1:
+    image: eclipse-temurin:17-jdk-alpine
+    container_name: badge_service_instance_1
+    environment:
+      - SERVER_PORT=3008
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=badge-service-1
+      - EUREKA_INSTANCE_HOSTNAME=badge_service_instance_1
+      - EUREKA_INSTANCE_PORT=3008
+    volumes:
+      - ../backend/spring-boot-services/badge-service/target/badge-service-1.0.0.jar:/app/badge-service.jar:ro
+    working_dir: /app
+    command: ["sh", "-c", "sleep 40 && java -jar badge-service.jar"]
+    ports:
+      - "3008:3008"
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  badge-service-2:
+    image: eclipse-temurin:17-jdk-alpine
+    container_name: badge_service_instance_2
+    environment:
+      - SERVER_PORT=3021
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=badge-service-2
+      - EUREKA_INSTANCE_HOSTNAME=badge_service_instance_2
+      - EUREKA_INSTANCE_PORT=3021
+    volumes:
+      - ../backend/spring-boot-services/badge-service/target/badge-service-1.0.0.jar:/app/badge-service.jar:ro
+    working_dir: /app
+    command: ["sh", "-c", "sleep 45 && java -jar badge-service.jar --server.port=3021"]
+    ports:
+      - "3021:3021"
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ----------- LEADERBOARD SERVICE INSTANCES -----------
+  leaderboard-service-1:
+    image: eclipse-temurin:17-jdk-alpine
+    container_name: leaderboard_service_instance_1
+    environment:
+      - SERVER_PORT=3009
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=leaderboard-service-1
+      - EUREKA_INSTANCE_HOSTNAME=leaderboard_service_instance_1
+      - EUREKA_INSTANCE_PORT=3009
+    volumes:
+      - ../backend/spring-boot-services/leaderboard-service/target/leaderboard-service-1.0.0.jar:/app/leaderboard-service.jar:ro
+    working_dir: /app
+    command: ["sh", "-c", "sleep 50 && java -jar leaderboard-service.jar"]
+    ports:
+      - "3009:3009"
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  leaderboard-service-2:
+    image: eclipse-temurin:17-jdk-alpine
+    container_name: leaderboard_service_instance_2
+    environment:
+      - SERVER_PORT=3022
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=leaderboard-service-2
+      - EUREKA_INSTANCE_HOSTNAME=leaderboard_service_instance_2
+      - EUREKA_INSTANCE_PORT=3022
+    volumes:
+      - ../backend/spring-boot-services/leaderboard-service/target/leaderboard-service-1.0.0.jar:/app/leaderboard-service.jar:ro
+    working_dir: /app
+    command: ["sh", "-c", "sleep 55 && java -jar leaderboard-service.jar --server.port=3022"]
+    ports:
+      - "3022:3022"
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ----------- ANALYTICS SERVICE INSTANCES -----------
+  analytics-service-1:
+    image: eclipse-temurin:17-jdk-alpine
+    container_name: analytics_service_instance_1
+    environment:
+      - SERVER_PORT=3007
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=analytics-service-1
+      - EUREKA_INSTANCE_HOSTNAME=analytics_service_instance_1
+      - EUREKA_INSTANCE_PORT=3007
+    volumes:
+      - ../backend/spring-boot-services/analytics-service/target/analytics-service-1.0.0.jar:/app/analytics-service.jar:ro
+    working_dir: /app
+    command: ["sh", "-c", "sleep 60 && java -jar analytics-service.jar"]
+    ports:
+      - "3007:3007"
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  analytics-service-2:
+    image: eclipse-temurin:17-jdk-alpine
+    container_name: analytics_service_instance_2
+    environment:
+      - SERVER_PORT=3023
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://host.docker.internal:8761/eureka/
+      - EUREKA_INSTANCE_INSTANCE_ID=analytics-service-2
+      - EUREKA_INSTANCE_HOSTNAME=analytics_service_instance_2
+      - EUREKA_INSTANCE_PORT=3023
+    volumes:
+      - ../backend/spring-boot-services/analytics-service/target/analytics-service-1.0.0.jar:/app/analytics-service.jar:ro
+    working_dir: /app
+    command: ["sh", "-c", "sleep 65 && java -jar analytics-service.jar --server.port=3023"]
+    ports:
+      - "3023:3023"
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ----------- FRONTEND INSTANCE -----------
+  frontend:
+    image: node:18-alpine
+    container_name: frontend_instance
+    working_dir: /app
+    volumes:
+      - ../frontend:/app
+      - frontend_node_modules:/app/node_modules
+    command: ["sh", "-c", "npm install && npm run dev -- --host"]
+    ports:
+      - "5173:5173"
+    networks:
+      - elearning_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ----------- H2 DATABASE SERVER FOR COURSE (TCP MODE) -----------
+  h2-server:
+    image: oscarfonts/h2:latest
+    container_name: h2_server
+    restart: unless-stopped
+    environment:
+      - H2_OPTIONS=-tcp -tcpAllowOthers -tcpPort 1522 -web -webPort 8083 -ifNotExists
+    ports:
+      - "1522:1522"
+      - "8083:8083"  # H2 Console for Course
+    volumes:
+      - h2_data:/opt/h2-data
+    networks:
+      - elearning_net
+
+  # ----------- H2 DATABASE SERVER FOR PROGRESS (TCP MODE) -----------
+  h2-server-progress:
+    image: oscarfonts/h2:latest
+    container_name: h2_server_progress
+    restart: unless-stopped
+    environment:
+      - H2_OPTIONS=-tcp -tcpAllowOthers -tcpPort 1523 -web -webPort 8084 -ifNotExists
+    ports:
+      - "1523:1523"
+      - "8084:8084"  # H2 Console for Progress
+    volumes:
+      - h2_data_progress:/opt/h2-data
+    networks:
+      - elearning_net
+
+  # ----------- H2 DATABASE SERVER FOR CHAT (TCP MODE) -----------
+  h2-server-chat:
+    image: oscarfonts/h2:latest
+    container_name: h2_server_chat
+    restart: unless-stopped
+    environment:
+      - H2_OPTIONS=-tcp -tcpAllowOthers -tcpPort 1524 -web -webPort 8086 -ifNotExists
+    ports:
+      - "1524:1524"
+      - "8086:8086"  # H2 Console for Chat
+    volumes:
+      - h2_data_chat:/opt/h2-data
+    networks:
+      - elearning_net
+
+volumes:
+  postgres_data:
+  mysql_data:
+  keycloak_data:
+  notification_node_modules:
+  notification_node_modules_2:
+  frontend_node_modules:
+  course_data_shared:
+  user_h2_data:
+  h2_data:
+  h2_data_progress:
+  h2_data_chat:
+
+networks:
+  elearning_net:
+    driver: bridge

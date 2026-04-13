@@ -1,0 +1,13 @@
+-- Données initiales pour les cours
+INSERT INTO courses (id, title, description, pdf_url) VALUES 
+(1, 'NestJS Basics', 'Learn NestJS from scratch', NULL),
+(2, 'React Advanced', 'Master React hooks and patterns', NULL),
+(3, 'Spring Boot Microservices', 'Build scalable microservices', NULL),
+(4, 'Docker & Kubernetes', 'Container orchestration mastery', NULL),
+(5, 'Angular Fundamentals', 'Modern web development with Angular', NULL);
+
+-- Données initiales pour les utilisateurs
+INSERT INTO users (id, username, email, password, role) VALUES 
+(1, 'admin', 'admin@elearning.com', '$2a$10$YourHashedPasswordHere', 'ADMIN'),
+(2, 'student1', 'student1@elearning.com', '$2a$10$YourHashedPasswordHere', 'STUDENT'),
+(3, 'teacher1', 'teacher1@elearning.com', '$2a$10$YourHashedPasswordHere', 'TEACHER');
